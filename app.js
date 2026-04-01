@@ -22,13 +22,30 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// 🔥 ЖДЁМ VK БЕЗ КРАША
 const vkBridge = window.vkBridge;
 
 let user = null;
 let role = null;
+let cooldown = {};
+let lastState = {};
 
-// безопасный notify
+// ================= SAFE VK INIT =================
+const vkReady = new Promise((resolve) => {
+  if (!vkBridge) return resolve(null);
+
+  vkBridge.send("VKWebAppGetUserInfo")
+    .then(res => {
+      user = res.id;
+      console.log("VK USER LOADED:", user);
+      resolve(user);
+    })
+    .catch(err => {
+      console.log("VK ERROR:", err);
+      resolve(null);
+    });
+});
+
+// ================= NOTIFY =================
 function notify(msg){
   try {
     vkBridge.send("VKWebAppShowMessageBox", {
@@ -40,98 +57,84 @@ function notify(msg){
   }
 }
 
-// VK init safe
-if (vkBridge) {
-  vkBridge.send("VKWebAppGetUserInfo")
-    .then(res => {
-      user = res.id;
-      console.log("VK USER:", user);
-    })
-    .catch(err => {
-      console.log("VK ERROR", err);
-    });
-} else {
-  console.log("VK BRIDGE NOT FOUND");
-}
-
 // ================= ROLE =================
 window.setRole = function(r){
   role = r;
-
-  document.getElementById("roleSelect").style.display = "none";
-  document.getElementById("topbar").style.display = "flex";
-
-  document.getElementById("passengerUI").classList.add("hidden");
-  document.getElementById("driverUI").classList.add("hidden");
-
-  if (r === "passenger") {
-    document.getElementById("passengerUI").classList.remove("hidden");
-    notify("Пассажир");
-  }
-
-  if (r === "driver") {
-    document.getElementById("driverUI").classList.remove("hidden");
-    notify("Водитель");
-  }
 };
 
-// ================= DRIVER =================
+// ================= DRIVER ONLINE (FIXED 100%) =================
 window.saveDriver = async function () {
   try {
-    const callsign = document.getElementById("callsign").value;
 
-    if (!callsign) return notify("нет позывного");
-    if (!user) return notify("нет VK user");
+    const callsign = document.getElementById("callsign").value.trim();
+
+    if (!callsign) return notify("Введите позывной");
+
+    // 🔥 ждём VK user
+    await vkReady;
+
+    if (!user) return notify("VK пользователь не загрузился");
 
     await addDoc(collection(db, "drivers"), {
       vk: user,
-      callsign,
       status: "online",
+      callsign,
       created: Date.now()
     });
 
-    notify("онлайн");
+    notify("Вы онлайн 🟢");
+
   } catch (e) {
-    console.log(e);
-    notify("ошибка driver");
+    console.error("saveDriver error:", e);
+    notify("Ошибка водитель online");
   }
 };
 
 // ================= ORDER =================
 window.createOrder = async function () {
-  try {
-    const from = document.getElementById("from").value;
-    const to = document.getElementById("to").value;
 
-    if (!from || !to) return notify("поля пустые");
+  const from = document.getElementById("from").value.trim();
+  const to = document.getElementById("to").value.trim();
 
-    await addDoc(collection(db, "orders"), {
-      from,
-      to,
-      status: "new",
-      passenger: user,
-      created: Date.now()
-    });
+  if (!from || !to) return notify("Заполните поля");
 
-    notify("заказ создан");
-  } catch (e) {
-    console.log(e);
-    notify("ошибка заказа");
-  }
+  await vkReady;
+
+  if (!user) return notify("VK не готов");
+
+  await addDoc(collection(db, "orders"), {
+    from,
+    to,
+    status: "new",
+    passenger: user,
+    driver: null,
+    created: Date.now()
+  });
+
+  notify("Заказ создан 🚕");
 };
 
-// ================= DRIVER ACTION =================
+// ================= ACCEPT =================
 window.acceptOrder = async function (id) {
-  try {
-    await updateDoc(doc(db, "orders", id), {
-      status: "accepted",
-      driver: user
-    });
 
-    notify("принял");
-  } catch (e) {
-    console.log(e);
+  await vkReady;
+
+  if (cooldown[user] && Date.now() - cooldown[user] < 120000) {
+    return notify("Кулдаун 2 минуты ⏳");
   }
+
+  await updateDoc(doc(db, "orders", id), {
+    status: "accepted",
+    driver: user
+  });
+
+  cooldown[user] = Date.now();
+  notify("Приняли заказ 🚖");
+};
+
+// ================= STATUS =================
+window.arrived = async function (id) {
+  await updateDoc(doc(db, "orders", id), { status: "arrived" });
 };
 
 window.finish = async function (id) {
@@ -146,26 +149,47 @@ window.cancel = async function (id) {
 onSnapshot(query(collection(db, "orders"), orderBy("created", "desc")), snap => {
 
   const el = document.getElementById("orders");
-  let html = "<h3>Заказы</h3>";
+  let html = "<h3>🚕 Заказы</h3>";
 
   snap.forEach(d => {
     const o = d.data();
 
-    html += `
-      <div class="card">
-        <b>${o.from} → ${o.to}</b><br>
-        ${o.status}<br>
-    `;
+    let style = "";
 
-    if (role === "driver" && o.status === "new") {
-      html += `<button onclick="acceptOrder('${d.id}')">Принять</button>`;
+    if (o.status === "accepted") style = "opacity:0.6;";
+    if (o.status === "done" || o.status === "cancelled")
+      style = "opacity:0.3; filter:grayscale(1);";
+
+    html += `<div class="card" style="${style}">
+      <b>${o.from} → ${o.to}</b><br>
+      Статус: ${o.status}<br>`;
+
+    if (role === "driver") {
+
+      if (o.status === "new") {
+        html += `<button onclick="acceptOrder('${d.id}')">Принять 🚖</button>`;
+      }
+
+      if (o.driver === user && o.status === "accepted") {
+        html += `
+          <button onclick="arrived('${d.id}')">На месте 📍</button>
+          <button onclick="finish('${d.id}')">Завершить ✅</button>
+          <button onclick="cancel('${d.id}')">Отмена ❌</button>
+        `;
+      }
     }
 
     if (role === "passenger" && o.passenger === user) {
-      html += `<button onclick="cancel('${d.id}')">Отмена</button>`;
+      if (o.status === "accepted") html += "🚖 Водитель едет...";
+      if (o.status === "arrived") html += "📍 Машина на месте";
+      if (o.status === "done") html += "✅ Завершено";
+
+      if (o.status !== "done") {
+        html += `<br><button onclick="cancel('${d.id}')">Отмена ❌</button>`;
+      }
     }
 
-    html += `</div>`;
+    html += "</div>";
   });
 
   el.innerHTML = html;
