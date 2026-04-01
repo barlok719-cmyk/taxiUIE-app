@@ -97,12 +97,15 @@ hr {
 
 <div id="orders"></div>
 
+<!-- ВАЖНО: делаем VK BRIDGE глобальным -->
+<script>
+window.vkBridge = vkBridge;
+vkBridge.send("VKWebAppInit");
+</script>
+
 <script type="module" src="app.js"></script>
 
 <script>
-vkBridge.send("VKWebAppInit");
-
-// только уведомления UI
 window.nativeNotify = function(title, msg){
   vkBridge.send("VKWebAppShowMessageBox", {
     title,
@@ -110,7 +113,6 @@ window.nativeNotify = function(title, msg){
   });
 };
 
-// назад (UI)
 function back(){
   document.getElementById("roleSelect").classList.remove("hidden");
   document.getElementById("passengerUI").classList.add("hidden");
