@@ -14,7 +14,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyD48x9Cqg88dzY0udAkbMsxblhZyhxG-f4",
   authDomain: "taxi-app-158f3.firebaseapp.com",
   projectId: "taxi-app-158f3",
-  storageBucket: "taxi-app-158f3.appspot.com",
+  storageBucket: "taxi-app-158f3.firebasestorage.app",
   messagingSenderId: "150352653529",
   appId: "1:150352653529:web:2dd6d85b5219b8807962c8"
 };
@@ -22,85 +22,69 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const vkBridge = window.vkBridge;
-
 let user = null;
 let role = null;
 let cooldown = {};
 let lastState = {};
 
-// ================= SAFE VK INIT =================
-const vkReady = new Promise((resolve) => {
-  if (!vkBridge) return resolve(null);
-
-  vkBridge.send("VKWebAppGetUserInfo")
-    .then(res => {
-      user = res.id;
-      console.log("VK USER LOADED:", user);
-      resolve(user);
-    })
-    .catch(err => {
-      console.log("VK ERROR:", err);
-      resolve(null);
-    });
+// VK init
+vkBridge.send("VKWebAppGetUserInfo").then(res => {
+  user = res.id;
 });
 
-// ================= NOTIFY =================
+// норм уведомления
 function notify(msg){
-  try {
-    vkBridge.send("VKWebAppShowMessageBox", {
-      title: "Taxi V6",
-      message: msg
-    });
-  } catch (e) {
-    alert(msg);
-  }
+  vkBridge.send("VKWebAppShowMessageBox", {
+    title: "Taxi V6",
+    message: msg
+  });
 }
 
-// ================= ROLE =================
+// сделать доступной HTML-кнопку назад
+window.back = function(){
+  role = null;
+};
+
+// ========== ROLE ==========
 window.setRole = function(r){
   role = r;
 };
 
-// ================= DRIVER ONLINE (FIXED 100%) =================
+// ========== DRIVER ONLINE ==========
 window.saveDriver = async function () {
-  try {
 
-    const callsign = document.getElementById("callsign").value.trim();
+  const callsign = document.getElementById("callsign").value.trim();
 
-    if (!callsign) return notify("Введите позывной");
-
-    // 🔥 ждём VK user
-    await vkReady;
-
-    if (!user) return notify("VK пользователь не загрузился");
-
-    await addDoc(collection(db, "drivers"), {
-      vk: user,
-      status: "online",
-      callsign,
-      created: Date.now()
-    });
-
-    notify("Вы онлайн 🟢");
-
-  } catch (e) {
-    console.error("saveDriver error:", e);
-    notify("Ошибка водитель online");
+  if (!callsign) {
+    notify("Введите позывной");
+    return;
   }
+
+  if (!user) {
+    notify("Пользователь не загружен");
+    return;
+  }
+
+  await addDoc(collection(db, "drivers"), {
+    vk: user,
+    status: "online",
+    callsign: callsign,
+    created: Date.now()
+  });
+
+  notify("Вы онлайн 🟢");
 };
 
-// ================= ORDER =================
+// ========== CREATE ORDER ==========
 window.createOrder = async function () {
 
   const from = document.getElementById("from").value.trim();
   const to = document.getElementById("to").value.trim();
 
-  if (!from || !to) return notify("Заполните поля");
-
-  await vkReady;
-
-  if (!user) return notify("VK не готов");
+  if (!from || !to) {
+    notify("Заполните поля");
+    return;
+  }
 
   await addDoc(collection(db, "orders"), {
     from,
@@ -114,13 +98,12 @@ window.createOrder = async function () {
   notify("Заказ создан 🚕");
 };
 
-// ================= ACCEPT =================
+// ========== ACCEPT ==========
 window.acceptOrder = async function (id) {
 
-  await vkReady;
-
   if (cooldown[user] && Date.now() - cooldown[user] < 120000) {
-    return notify("Кулдаун 2 минуты ⏳");
+    notify("Кулдаун 2 минуты ⏳");
+    return;
   }
 
   await updateDoc(doc(db, "orders", id), {
@@ -129,41 +112,52 @@ window.acceptOrder = async function (id) {
   });
 
   cooldown[user] = Date.now();
-  notify("Приняли заказ 🚖");
+  notify("Вы приняли заказ 🚖");
 };
 
-// ================= STATUS =================
+// ========== STATUS ==========
 window.arrived = async function (id) {
   await updateDoc(doc(db, "orders", id), { status: "arrived" });
+  notify("Вы на месте 📍");
 };
 
 window.finish = async function (id) {
   await updateDoc(doc(db, "orders", id), { status: "done" });
+  notify("Заказ завершён ✅");
 };
 
 window.cancel = async function (id) {
   await updateDoc(doc(db, "orders", id), { status: "cancelled" });
+  notify("Заказ отменён ❌");
 };
 
-// ================= RENDER =================
+// ========== RENDER ==========
 onSnapshot(query(collection(db, "orders"), orderBy("created", "desc")), snap => {
 
-  const el = document.getElementById("orders");
   let html = "<h3>🚕 Заказы</h3>";
 
   snap.forEach(d => {
-    const o = d.data();
+    let o = d.data();
 
     let style = "";
 
     if (o.status === "accepted") style = "opacity:0.6;";
-    if (o.status === "done" || o.status === "cancelled")
-      style = "opacity:0.3; filter:grayscale(1);";
+    if (o.status === "done" || o.status === "cancelled") style = "opacity:0.3; filter:grayscale(1);";
+
+    // уведомления
+    if (!lastState[d.id] || lastState[d.id] !== o.status) {
+      lastState[d.id] = o.status;
+
+      if (o.status === "accepted" && o.passenger === user) notify("Заказ принят 🚖");
+      if (o.status === "arrived" && o.passenger === user) notify("Машина приехала 📍");
+      if (o.status === "done" && o.passenger === user) notify("Поездка завершена ✅");
+    }
 
     html += `<div class="card" style="${style}">
-      <b>${o.from} → ${o.to}</b><br>
+      <b>📍 ${o.from} → ${o.to}</b><br>
       Статус: ${o.status}<br>`;
 
+    // DRIVER UI
     if (role === "driver") {
 
       if (o.status === "new") {
@@ -179,7 +173,9 @@ onSnapshot(query(collection(db, "orders"), orderBy("created", "desc")), snap => 
       }
     }
 
+    // PASSENGER UI
     if (role === "passenger" && o.passenger === user) {
+
       if (o.status === "accepted") html += "🚖 Водитель едет...";
       if (o.status === "arrived") html += "📍 Машина на месте";
       if (o.status === "done") html += "✅ Завершено";
@@ -192,5 +188,5 @@ onSnapshot(query(collection(db, "orders"), orderBy("created", "desc")), snap => 
     html += "</div>";
   });
 
-  el.innerHTML = html;
+  document.getElementById("orders").innerHTML = html;
 });
