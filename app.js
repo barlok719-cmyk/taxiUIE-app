@@ -22,12 +22,14 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// 🔥 ВАЖНО: теперь берём из window
+const vkBridge = window.vkBridge;
+
 let user = null;
 let role = null;
 let cooldown = {};
-let lastState = {};
 
-// VK INIT (ВАЖНО: только здесь)
+// VK USER
 vkBridge.send("VKWebAppGetUserInfo").then(res => {
   user = res.id;
 });
@@ -58,7 +60,7 @@ window.setRole = function(r){
   }
 };
 
-// ================= DRIVER ONLINE (ФИКС 100%) =================
+// ================= DRIVER =================
 window.saveDriver = async function () {
 
   const callsign = document.getElementById("callsign").value.trim();
@@ -76,7 +78,7 @@ window.saveDriver = async function () {
   notify("Вы онлайн 🟢");
 };
 
-// ================= PRICELIST (как txt файлы городов) =================
+// ================= PRICE =================
 const cityPrice = {
   "Город А": 120,
   "Город Б": 150,
@@ -91,7 +93,7 @@ function getPrice(from, to){
   return Math.abs(b - a) + 50;
 }
 
-// ================= CREATE ORDER =================
+// ================= ORDER =================
 window.createOrder = async function () {
 
   const from = document.getElementById("from").value.trim();
@@ -160,10 +162,9 @@ onSnapshot(query(collection(db, "orders"), orderBy("created", "desc")), snap => 
 
     html += `<div class="card" style="${style}">
       <b>📍 ${o.from} → ${o.to}</b><br>
-      💰 ${o.price || 150}₽<br>
+      💰 ${o.price}₽<br>
       Статус: ${o.status}<br>`;
 
-    // DRIVER
     if (role === "driver") {
 
       if (o.status === "new") {
@@ -179,7 +180,6 @@ onSnapshot(query(collection(db, "orders"), orderBy("created", "desc")), snap => 
       }
     }
 
-    // PASSENGER
     if (role === "passenger" && o.passenger === user) {
 
       if (o.status === "accepted") html += "🚖 Водитель едет...";
