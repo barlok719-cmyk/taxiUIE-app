@@ -14,7 +14,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyD48x9Cqg88dzY0udAkbMsxblhZyhxG-f4",
   authDomain: "taxi-app-158f3.firebaseapp.com",
   projectId: "taxi-app-158f3",
-  storageBucket: "taxi-app-158f3.firebasestorage.app",
+  storageBucket: "taxi-app-158f3.appspot.com",
   messagingSenderId: "150352653529",
   appId: "1:150352653529:web:2dd6d85b5219b8807962c8"
 };
@@ -22,177 +22,151 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// 🔥 ВАЖНО: теперь берём из window
+// 🔥 ЖДЁМ VK БЕЗ КРАША
 const vkBridge = window.vkBridge;
 
 let user = null;
 let role = null;
-let cooldown = {};
 
-// VK USER
-vkBridge.send("VKWebAppGetUserInfo").then(res => {
-  user = res.id;
-});
-
-// уведомления
+// безопасный notify
 function notify(msg){
-  vkBridge.send("VKWebAppShowMessageBox", {
-    title: "Taxi V6",
-    message: msg
-  });
+  try {
+    vkBridge.send("VKWebAppShowMessageBox", {
+      title: "Taxi V6",
+      message: msg
+    });
+  } catch (e) {
+    alert(msg);
+  }
+}
+
+// VK init safe
+if (vkBridge) {
+  vkBridge.send("VKWebAppGetUserInfo")
+    .then(res => {
+      user = res.id;
+      console.log("VK USER:", user);
+    })
+    .catch(err => {
+      console.log("VK ERROR", err);
+    });
+} else {
+  console.log("VK BRIDGE NOT FOUND");
 }
 
 // ================= ROLE =================
 window.setRole = function(r){
   role = r;
 
-  document.getElementById("roleSelect").classList.add("hidden");
-  document.getElementById("topbar").classList.remove("hidden");
+  document.getElementById("roleSelect").style.display = "none";
+  document.getElementById("topbar").style.display = "flex";
+
+  document.getElementById("passengerUI").classList.add("hidden");
+  document.getElementById("driverUI").classList.add("hidden");
 
   if (r === "passenger") {
     document.getElementById("passengerUI").classList.remove("hidden");
-    notify("Вы пассажир 🚶");
+    notify("Пассажир");
   }
 
   if (r === "driver") {
     document.getElementById("driverUI").classList.remove("hidden");
-    notify("Вы водитель 🚗");
+    notify("Водитель");
   }
 };
 
 // ================= DRIVER =================
 window.saveDriver = async function () {
+  try {
+    const callsign = document.getElementById("callsign").value;
 
-  const callsign = document.getElementById("callsign").value.trim();
+    if (!callsign) return notify("нет позывного");
+    if (!user) return notify("нет VK user");
 
-  if (!callsign) return notify("Введите позывной");
-  if (!user) return notify("VK user не загружен");
+    await addDoc(collection(db, "drivers"), {
+      vk: user,
+      callsign,
+      status: "online",
+      created: Date.now()
+    });
 
-  await addDoc(collection(db, "drivers"), {
-    vk: user,
-    status: "online",
-    callsign,
-    created: Date.now()
-  });
-
-  notify("Вы онлайн 🟢");
+    notify("онлайн");
+  } catch (e) {
+    console.log(e);
+    notify("ошибка driver");
+  }
 };
-
-// ================= PRICE =================
-const cityPrice = {
-  "Город А": 120,
-  "Город Б": 150,
-  "Город Н": 200,
-  "Город С": 250,
-  "Город Д": 300
-};
-
-function getPrice(from, to){
-  const a = cityPrice[from] || 150;
-  const b = cityPrice[to] || 150;
-  return Math.abs(b - a) + 50;
-}
 
 // ================= ORDER =================
 window.createOrder = async function () {
+  try {
+    const from = document.getElementById("from").value;
+    const to = document.getElementById("to").value;
 
-  const from = document.getElementById("from").value.trim();
-  const to = document.getElementById("to").value.trim();
+    if (!from || !to) return notify("поля пустые");
 
-  if (!from || !to) return notify("Заполните поля");
+    await addDoc(collection(db, "orders"), {
+      from,
+      to,
+      status: "new",
+      passenger: user,
+      created: Date.now()
+    });
 
-  const price = getPrice(from, to);
-
-  await addDoc(collection(db, "orders"), {
-    from,
-    to,
-    price,
-    status: "new",
-    passenger: user,
-    driver: null,
-    created: Date.now()
-  });
-
-  notify("Заказ создан 🚕 " + price + "₽");
-};
-
-// ================= DRIVER ACTIONS =================
-window.acceptOrder = async function (id) {
-
-  if (cooldown[user] && Date.now() - cooldown[user] < 120000) {
-    return notify("Кулдаун 2 минуты ⏳");
+    notify("заказ создан");
+  } catch (e) {
+    console.log(e);
+    notify("ошибка заказа");
   }
-
-  await updateDoc(doc(db, "orders", id), {
-    status: "accepted",
-    driver: user
-  });
-
-  cooldown[user] = Date.now();
-  notify("Заказ принят 🚖");
 };
 
-window.arrived = async function (id) {
-  await updateDoc(doc(db, "orders", id), { status: "arrived" });
-  notify("Вы на месте 📍");
+// ================= DRIVER ACTION =================
+window.acceptOrder = async function (id) {
+  try {
+    await updateDoc(doc(db, "orders", id), {
+      status: "accepted",
+      driver: user
+    });
+
+    notify("принял");
+  } catch (e) {
+    console.log(e);
+  }
 };
 
 window.finish = async function (id) {
   await updateDoc(doc(db, "orders", id), { status: "done" });
-  notify("Поездка завершена ✅");
 };
 
 window.cancel = async function (id) {
   await updateDoc(doc(db, "orders", id), { status: "cancelled" });
-  notify("Отмена ❌");
 };
 
 // ================= RENDER =================
 onSnapshot(query(collection(db, "orders"), orderBy("created", "desc")), snap => {
 
-  let html = "<h3>🚕 Заказы</h3>";
+  const el = document.getElementById("orders");
+  let html = "<h3>Заказы</h3>";
 
   snap.forEach(d => {
     const o = d.data();
 
-    let style = "";
-    if (o.status === "accepted") style = "opacity:0.6;";
-    if (o.status === "done" || o.status === "cancelled")
-      style = "opacity:0.3; filter:grayscale(1);";
+    html += `
+      <div class="card">
+        <b>${o.from} → ${o.to}</b><br>
+        ${o.status}<br>
+    `;
 
-    html += `<div class="card" style="${style}">
-      <b>📍 ${o.from} → ${o.to}</b><br>
-      💰 ${o.price}₽<br>
-      Статус: ${o.status}<br>`;
-
-    if (role === "driver") {
-
-      if (o.status === "new") {
-        html += `<button onclick="acceptOrder('${d.id}')">Принять 🚖</button>`;
-      }
-
-      if (o.driver === user && o.status === "accepted") {
-        html += `
-          <button onclick="arrived('${d.id}')">На месте 📍</button>
-          <button onclick="finish('${d.id}')">Завершить ✅</button>
-          <button onclick="cancel('${d.id}')">Отмена ❌</button>
-        `;
-      }
+    if (role === "driver" && o.status === "new") {
+      html += `<button onclick="acceptOrder('${d.id}')">Принять</button>`;
     }
 
     if (role === "passenger" && o.passenger === user) {
-
-      if (o.status === "accepted") html += "🚖 Водитель едет...";
-      if (o.status === "arrived") html += "📍 Машина на месте";
-      if (o.status === "done") html += "✅ Завершено";
-
-      if (o.status !== "done") {
-        html += `<br><button onclick="cancel('${d.id}')">Отмена ❌</button>`;
-      }
+      html += `<button onclick="cancel('${d.id}')">Отмена</button>`;
     }
 
-    html += "</div>";
+    html += `</div>`;
   });
 
-  document.getElementById("orders").innerHTML = html;
+  el.innerHTML = html;
 });
