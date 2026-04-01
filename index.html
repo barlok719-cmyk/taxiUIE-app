@@ -102,39 +102,21 @@ hr {
 <script>
 vkBridge.send("VKWebAppInit");
 
-// базовое уведомление (fallback)
+// только уведомления UI
 window.nativeNotify = function(title, msg){
-  vkBridge.send("VKWebAppShowNotification", {
+  vkBridge.send("VKWebAppShowMessageBox", {
     title,
     message: msg
   });
 };
 
-// кнопка назад
-function back() {
+// назад (UI)
+function back(){
   document.getElementById("roleSelect").classList.remove("hidden");
   document.getElementById("passengerUI").classList.add("hidden");
   document.getElementById("driverUI").classList.add("hidden");
   document.getElementById("topbar").classList.add("hidden");
-
-  window.currentRole = null;
 }
-
-// выбор роли
-window.setRole = function(r){
-  window.currentRole = r;
-
-  document.getElementById("roleSelect").classList.add("hidden");
-  document.getElementById("topbar").classList.remove("hidden");
-
-  if (r === "passenger") {
-    document.getElementById("passengerUI").classList.remove("hidden");
-    nativeNotify("Taxi V6", "Вы пассажир 🚶");
-  } else {
-    document.getElementById("driverUI").classList.remove("hidden");
-    nativeNotify("Taxi V6", "Вы водитель 🚗");
-  }
-};
 </script>
 
 </body>
