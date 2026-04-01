@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Taxi V5</title>
+
+<script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
+
+<style>
+body { font-family: Arial; padding: 15px; }
+button { margin: 4px; padding: 8px; }
+.card { border:1px solid #ccc; padding:10px; margin:10px 0; }
+.hidden { display:none; }
+</style>
+</head>
+
+<body>
+
+<h2>🚖 Taxi V5</h2>
+
+<div id="roleSelect">
+  <button onclick="setRole('passenger')">Пассажир</button>
+  <button onclick="setRole('driver')">Водитель</button>
+</div>
+
+<div id="passengerUI" class="hidden">
+  <h3>Пассажир</h3>
+  <input id="from" placeholder="Откуда"><br>
+  <input id="to" placeholder="Куда"><br>
+  <button onclick="createOrder()">Создать заказ</button>
+</div>
+
+<div id="driverUI" class="hidden">
+  <h3>Водитель</h3>
+  <input id="callsign" placeholder="Позывной">
+  <button onclick="saveDriver()">Стать онлайн</button>
+</div>
+
+<hr>
+
+<div id="orders"></div>
+
+<script type="module" src="app.js"></script>
+
+</body>
+</html>
