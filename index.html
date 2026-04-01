@@ -14,9 +14,7 @@ body {
   color: white;
 }
 
-h2 {
-  text-align: center;
-}
+h2 { text-align: center; }
 
 button {
   width: 100%;
@@ -29,9 +27,7 @@ button {
   font-weight: bold;
 }
 
-button:active {
-  transform: scale(0.98);
-}
+button:active { transform: scale(0.98); }
 
 input {
   width: 100%;
@@ -53,15 +49,20 @@ input {
 
 .hidden { display:none; }
 
-.status {
-  font-size: 12px;
-  opacity: 0.7;
-}
-
 hr {
   border: 0;
   border-top: 1px solid #222;
   margin: 15px 0;
+}
+
+.topbar {
+  display:flex;
+  gap:10px;
+}
+
+.smallBtn {
+  background:#444;
+  width: 30%;
 }
 </style>
 </head>
@@ -73,6 +74,10 @@ hr {
 <div id="roleSelect">
   <button onclick="setRole('passenger')">🚶 Пассажир</button>
   <button onclick="setRole('driver')">🚗 Водитель</button>
+</div>
+
+<div class="topbar hidden" id="topbar">
+  <button class="smallBtn" onclick="back()">⬅ Назад</button>
 </div>
 
 <div id="passengerUI" class="hidden">
@@ -95,35 +100,41 @@ hr {
 <script type="module" src="app.js"></script>
 
 <script>
-/* VK INIT */
 vkBridge.send("VKWebAppInit");
 
-/* Роль */
-function setRole(r) {
+// базовое уведомление (fallback)
+window.nativeNotify = function(title, msg){
+  vkBridge.send("VKWebAppShowNotification", {
+    title,
+    message: msg
+  });
+};
+
+// кнопка назад
+function back() {
+  document.getElementById("roleSelect").classList.remove("hidden");
+  document.getElementById("passengerUI").classList.add("hidden");
+  document.getElementById("driverUI").classList.add("hidden");
+  document.getElementById("topbar").classList.add("hidden");
+
+  window.currentRole = null;
+}
+
+// выбор роли
+window.setRole = function(r){
+  window.currentRole = r;
+
   document.getElementById("roleSelect").classList.add("hidden");
+  document.getElementById("topbar").classList.remove("hidden");
 
   if (r === "passenger") {
     document.getElementById("passengerUI").classList.remove("hidden");
+    nativeNotify("Taxi V6", "Вы пассажир 🚶");
   } else {
     document.getElementById("driverUI").classList.remove("hidden");
+    nativeNotify("Taxi V6", "Вы водитель 🚗");
   }
-
-  vkBridge.send("VKWebAppShowNotification", {
-    title: "Taxi V6",
-    message: "Роль выбрана: " + r
-  });
-}
-
-/* Уведомление VK */
-function notify(title, msg) {
-  vkBridge.send("VKWebAppShowNotification", {
-    title: title,
-    message: msg
-  });
-}
-
-/* Переопределим функции глобально (их будет использовать app.js) */
-window.notify = notify;
+};
 </script>
 
 </body>
