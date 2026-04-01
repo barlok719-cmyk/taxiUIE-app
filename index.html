@@ -97,28 +97,44 @@ hr {
 
 <div id="orders"></div>
 
-<!-- ВАЖНО: делаем VK BRIDGE глобальным -->
-<script>
-window.vkBridge = vkBridge;
-vkBridge.send("VKWebAppInit");
-</script>
-
 <script type="module" src="app.js"></script>
 
 <script>
+vkBridge.send("VKWebAppInit");
+
+// базовое уведомление (fallback)
 window.nativeNotify = function(title, msg){
-  vkBridge.send("VKWebAppShowMessageBox", {
+  vkBridge.send("VKWebAppShowNotification", {
     title,
     message: msg
   });
 };
 
-function back(){
+// кнопка назад
+function back() {
   document.getElementById("roleSelect").classList.remove("hidden");
   document.getElementById("passengerUI").classList.add("hidden");
   document.getElementById("driverUI").classList.add("hidden");
   document.getElementById("topbar").classList.add("hidden");
+
+  window.currentRole = null;
 }
+
+// выбор роли
+window.setRole = function(r){
+  window.currentRole = r;
+
+  document.getElementById("roleSelect").classList.add("hidden");
+  document.getElementById("topbar").classList.remove("hidden");
+
+  if (r === "passenger") {
+    document.getElementById("passengerUI").classList.remove("hidden");
+    nativeNotify("Taxi V6", "Вы пассажир 🚶");
+  } else {
+    document.getElementById("driverUI").classList.remove("hidden");
+    nativeNotify("Taxi V6", "Вы водитель 🚗");
+  }
+};
 </script>
 
 </body>
